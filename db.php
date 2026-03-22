@@ -16,7 +16,7 @@ function getDatabaseConfigValue($key, $default = null) {
     return $default;
 }
 
-$host = getDatabaseConfigValue('RESERVA_DB_HOST', 'localhost');
+$host = getDatabaseConfigValue('RESERVA_DB_HOST', '127.0.0.1');
 $port = getDatabaseConfigValue('RESERVA_DB_PORT', '3306');
 $dbname = getDatabaseConfigValue('RESERVA_DB_NAME', 'reserva_escolar_v2');
 $username = getDatabaseConfigValue('RESERVA_DB_USERNAME', 'root');
