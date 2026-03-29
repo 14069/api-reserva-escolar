@@ -16,13 +16,19 @@ function getRuntimeConfigValue($key, $default = null) {
     return $default;
 }
 
-function jsonResponse($success, $message = "", $data = null, $statusCode = 200) {
+function jsonResponse($success, $message = "", $data = null, $statusCode = 200, $meta = null) {
     http_response_code($statusCode);
-    echo json_encode([
+    $payload = [
         "success" => $success,
         "message" => $message,
         "data" => $data
-    ]);
+    ];
+
+    if ($meta !== null) {
+        $payload["meta"] = $meta;
+    }
+
+    echo json_encode($payload);
     exit;
 }
 
@@ -121,6 +127,45 @@ function isValidTimeString($time) {
 
     $parsed = DateTime::createFromFormat('H:i:s', $time);
     return $parsed && $parsed->format('H:i:s') === $time;
+}
+
+function getPaginationParams($defaultPageSize = 20, $maxPageSize = 100) {
+    $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+    $pageSize = isset($_GET['page_size']) ? (int) $_GET['page_size'] : $defaultPageSize;
+
+    if ($page < 1) {
+        $page = 1;
+    }
+
+    if ($pageSize < 1) {
+        $pageSize = $defaultPageSize;
+    }
+
+    if ($pageSize > $maxPageSize) {
+        $pageSize = $maxPageSize;
+    }
+
+    return [
+        'page' => $page,
+        'page_size' => $pageSize,
+        'offset' => ($page - 1) * $pageSize,
+    ];
+}
+
+function buildPaginationMeta($total, $page, $pageSize, $summary = []) {
+    $total = (int) $total;
+    $page = (int) $page;
+    $pageSize = (int) $pageSize;
+    $totalPages = $pageSize > 0 ? (int) ceil($total / $pageSize) : 0;
+
+    return [
+        'page' => $page,
+        'page_size' => $pageSize,
+        'total' => $total,
+        'total_pages' => $totalPages,
+        'has_next_page' => $page < $totalPages,
+        'summary' => $summary,
+    ];
 }
 
 function getAuthorizationHeaderValue() {
