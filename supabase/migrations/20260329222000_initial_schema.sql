@@ -84,6 +84,7 @@ create table if not exists public.bookings (
     created_at timestamp not null default current_timestamp,
     cancelled_at timestamp,
     completed_at timestamp,
+    completion_feedback text,
     completed_by_user_id integer references public.users(id),
     cancelled_by_user_id integer references public.users(id)
 );

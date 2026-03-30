@@ -3,6 +3,7 @@ require_once 'response.php';
 require_once 'db.php';
 
 $currentTimestampExpression = getCurrentTimestampExpression();
+$hasCompletionFeedbackColumn = databaseColumnExists($pdo, 'bookings', 'completion_feedback');
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(false, "Método não permitido.", null, 405);
@@ -13,6 +14,15 @@ $input = getJsonInput();
 $schoolId = $input['school_id'] ?? null;
 $bookingId = $input['booking_id'] ?? null;
 $userId = $input['user_id'] ?? null;
+$completionFeedback = trim((string) ($input['completion_feedback'] ?? ''));
+
+if ($completionFeedback === '') {
+    $completionFeedback = null;
+}
+
+if ($completionFeedback !== null && mb_strlen($completionFeedback) > 500) {
+    jsonResponse(false, "O feedback deve ter no máximo 500 caracteres.", null, 400);
+}
 
 if (empty($schoolId) || empty($bookingId) || empty($userId)) {
     jsonResponse(false, "school_id, booking_id e user_id são obrigatórios.", null, 400);
@@ -60,20 +70,33 @@ if ($bookingDate === '' || $bookingDate > $today) {
 }
 
 try {
-    $updateStmt = $pdo->prepare("
-        UPDATE bookings
-        SET status = 'completed',
-            completed_at = $currentTimestampExpression,
-            completed_by_user_id = ?
-        WHERE id = ?
-          AND school_id = ?
-    ");
-    $updateStmt->execute([$userId, $bookingId, $schoolId]);
+    if ($hasCompletionFeedbackColumn) {
+        $updateStmt = $pdo->prepare("
+            UPDATE bookings
+            SET status = 'completed',
+                completed_at = $currentTimestampExpression,
+                completed_by_user_id = ?,
+                completion_feedback = ?
+            WHERE id = ?
+              AND school_id = ?
+        ");
+        $updateStmt->execute([$userId, $completionFeedback, $bookingId, $schoolId]);
+    } else {
+        $updateStmt = $pdo->prepare("
+            UPDATE bookings
+            SET status = 'completed',
+                completed_at = $currentTimestampExpression,
+                completed_by_user_id = ?
+            WHERE id = ?
+              AND school_id = ?
+        ");
+        $updateStmt->execute([$userId, $bookingId, $schoolId]);
+    }
 } catch (PDOException $e) {
     error_log('Complete booking failed: ' . $e->getMessage());
     jsonResponse(
         false,
-        "Não foi possível finalizar o agendamento. Verifique se a coluna status da tabela bookings aceita o valor 'completed'.",
+        "Não foi possível finalizar o agendamento. Verifique se a tabela bookings possui as colunas de conclusão esperadas.",
         null,
         500
     );

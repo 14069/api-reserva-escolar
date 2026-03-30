@@ -6,6 +6,9 @@ $formattedBookingDateExpression = getFormattedDateSearchExpression('b.booking_da
 $completedAtDateExpression = getDateOnlyExpression('b.completed_at');
 $currentDateExpression = getCurrentDateExpression();
 $weekdayIndexExpression = getWeekdayIndexExpression('b.booking_date');
+$completionFeedbackSelect = databaseColumnExists($pdo, 'bookings', 'completion_feedback')
+    ? 'b.completion_feedback'
+    : 'NULL AS completion_feedback';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(false, "Método não permitido.", null, 405);
@@ -38,6 +41,7 @@ $selectSql = "
         b.status,
         b.cancelled_at,
         b.completed_at,
+        $completionFeedbackSelect,
         r.name AS resource_name,
         u.name AS user_name,
         uc.name AS completed_by_name,
