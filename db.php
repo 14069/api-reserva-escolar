@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/bootstrap_env.php';
+
 function getDatabaseConfigValue($key, $default = null) {
     $value = getenv($key);
     if ($value !== false && $value !== '') {
