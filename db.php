@@ -98,6 +98,41 @@ function getWeekdayIndexExpression($columnName) {
         : "WEEKDAY($columnName)";
 }
 
+function databaseColumnExists(PDO $pdo, string $tableName, string $columnName): bool {
+    static $cache = [];
+
+    $cacheKey = getDatabaseDriver() . ':' . $tableName . ':' . $columnName;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    if (getDatabaseDriver() === 'pgsql') {
+        $stmt = $pdo->prepare("
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = ?
+              AND column_name = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$tableName, $columnName]);
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = ?
+              AND column_name = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$tableName, $columnName]);
+    }
+
+    $cache[$cacheKey] = (bool) $stmt->fetchColumn();
+
+    return $cache[$cacheKey];
+}
+
 $settings = getDatabaseConnectionSettings();
 $driver = $settings['driver'];
 $host = $settings['host'];

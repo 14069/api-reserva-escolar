@@ -58,6 +58,7 @@ $tables = [
         'created_at',
         'cancelled_at',
         'completed_at',
+        'completion_feedback',
         'completed_by_user_id',
         'cancelled_by_user_id',
     ],
@@ -114,6 +115,27 @@ function quoteMysqlIdentifier(string $name): string
     return '`' . str_replace('`', '``', $name) . '`';
 }
 
+function getMysqlTableColumns(PDO $mysql, string $table): array
+{
+    static $cache = [];
+
+    if (isset($cache[$table])) {
+        return $cache[$table];
+    }
+
+    $stmt = $mysql->prepare("
+        SELECT COLUMN_NAME
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = ?
+    ");
+    $stmt->execute([$table]);
+
+    $cache[$table] = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+
+    return $cache[$table];
+}
+
 function resetSequences(PDO $pg, array $tables): void
 {
     foreach ($tables as $table) {
@@ -145,7 +167,17 @@ $pg->beginTransaction();
 
 try {
     foreach ($tables as $table => $columns) {
-        $mysqlColumnSql = implode(', ', array_map(static fn(string $column): string => quoteMysqlIdentifier($column), $columns));
+        $mysqlColumns = getMysqlTableColumns($mysql, $table);
+        $mysqlColumnSql = implode(', ', array_map(
+            static function (string $column) use ($mysqlColumns): string {
+                if (in_array($column, $mysqlColumns, true)) {
+                    return quoteMysqlIdentifier($column);
+                }
+
+                return 'NULL AS ' . quoteMysqlIdentifier($column);
+            },
+            $columns
+        ));
         $pgColumnSql = implode(', ', array_map(static fn(string $column): string => quoteIdentifier($column), $columns));
         $select = $mysql->query("SELECT $mysqlColumnSql FROM " . quoteMysqlIdentifier($table) . " ORDER BY id ASC");
         $rows = $select->fetchAll();

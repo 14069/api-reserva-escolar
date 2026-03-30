@@ -3,6 +3,9 @@ require_once 'response.php';
 require_once 'db.php';
 
 $formattedBookingDateExpression = getFormattedDateSearchExpression('b.booking_date');
+$completionFeedbackSelect = databaseColumnExists($pdo, 'bookings', 'completion_feedback')
+    ? 'b.completion_feedback'
+    : 'NULL AS completion_feedback';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(false, "Método não permitido.", null, 405);
@@ -31,6 +34,7 @@ $selectSql = "
         b.status,
         b.cancelled_at,
         b.completed_at,
+        $completionFeedbackSelect,
         r.name AS resource_name,
         uc.name AS completed_by_name,
         cg.name AS class_group_name,
