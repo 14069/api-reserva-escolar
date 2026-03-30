@@ -126,10 +126,6 @@ if ($sort === 'date_asc') {
 $baseSelectSql = $selectSql . $fromSql . $orderSql;
 
 if ($shouldPaginate) {
-    $countStmt = $pdo->prepare("SELECT COUNT(*) " . $fromSql);
-    $countStmt->execute($params);
-    $total = (int) $countStmt->fetchColumn();
-
     $summaryStmt = $pdo->prepare("
         SELECT
             COUNT(*) AS total,
@@ -268,20 +264,39 @@ if ($shouldPaginate) {
 $stmt->execute($queryParams);
 $bookings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$lessonsStmt = $pdo->prepare("
-    SELECT
-        ls.id,
-        ls.lesson_number,
-        ls.label
-    FROM booking_lessons bl
-    INNER JOIN lesson_slots ls ON ls.id = bl.lesson_slot_id
-    WHERE bl.booking_id = ?
-    ORDER BY ls.lesson_number ASC
-");
-
 foreach ($bookings as &$booking) {
-    $lessonsStmt->execute([$booking['id']]);
-    $booking['lessons'] = $lessonsStmt->fetchAll(PDO::FETCH_ASSOC);
+    $booking['lessons'] = [];
+}
+unset($booking);
+
+if (!empty($bookings)) {
+    $bookingIds = array_map(static fn($booking) => (int) $booking['id'], $bookings);
+    $placeholders = implode(', ', array_fill(0, count($bookingIds), '?'));
+
+    $lessonsStmt = $pdo->prepare("
+        SELECT
+            bl.booking_id,
+            ls.id,
+            ls.lesson_number,
+            ls.label
+        FROM booking_lessons bl
+        INNER JOIN lesson_slots ls ON ls.id = bl.lesson_slot_id
+        WHERE bl.booking_id IN ($placeholders)
+        ORDER BY bl.booking_id ASC, ls.lesson_number ASC
+    ");
+    $lessonsStmt->execute($bookingIds);
+
+    $lessonsByBookingId = [];
+    while ($lesson = $lessonsStmt->fetch(PDO::FETCH_ASSOC)) {
+        $bookingId = (int) $lesson['booking_id'];
+        unset($lesson['booking_id']);
+        $lessonsByBookingId[$bookingId][] = $lesson;
+    }
+
+    foreach ($bookings as &$booking) {
+        $booking['lessons'] = $lessonsByBookingId[(int) $booking['id']] ?? [];
+    }
+    unset($booking);
 }
 
 if ($shouldPaginate) {
@@ -291,7 +306,7 @@ if ($shouldPaginate) {
         $bookings,
         200,
         buildPaginationMeta(
-            $total,
+            (int) ($summaryRow['total'] ?? 0),
             $pagination['page'],
             $pagination['page_size'],
             [
@@ -305,7 +320,9 @@ if ($shouldPaginate) {
                 'unique_class_groups_count' => (int) ($summaryRow['unique_class_groups_count'] ?? 0),
                 'unique_subjects_count' => (int) ($summaryRow['unique_subjects_count'] ?? 0),
                 'total_reserved_lessons' => $totalReservedLessons,
-                'average_lessons_per_booking' => $total > 0 ? round($totalReservedLessons / $total, 2) : 0,
+                'average_lessons_per_booking' => ((int) ($summaryRow['total'] ?? 0)) > 0
+                    ? round($totalReservedLessons / (int) ($summaryRow['total'] ?? 0), 2)
+                    : 0,
                 'busiest_weekday_label' => $busiestWeekdayLabel,
                 'teacher_options' => $teacherOptions,
                 'resource_options' => $resourceOptions,
