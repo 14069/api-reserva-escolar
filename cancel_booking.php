@@ -1,6 +1,7 @@
 <?php
 require_once 'response.php';
 require_once 'db.php';
+require_once 'notifications_utils.php';
 
 $currentTimestampExpression = getCurrentTimestampExpression();
 
@@ -61,5 +62,13 @@ $updateStmt = $pdo->prepare("
       AND school_id = ?
 ");
 $updateStmt->execute([$userId, $bookingId, $schoolId]);
+
+notifyTechniciansAboutBookingEvent(
+    $pdo,
+    (int) $schoolId,
+    (int) $bookingId,
+    'booking_cancelled',
+    (int) $userId
+);
 
 jsonResponse(true, "Agendamento cancelado com sucesso.");

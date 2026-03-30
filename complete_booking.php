@@ -1,6 +1,7 @@
 <?php
 require_once 'response.php';
 require_once 'db.php';
+require_once 'notifications_utils.php';
 
 $currentTimestampExpression = getCurrentTimestampExpression();
 $hasCompletionFeedbackColumn = databaseColumnExists($pdo, 'bookings', 'completion_feedback');
@@ -101,5 +102,14 @@ try {
         500
     );
 }
+
+notifyTechniciansAboutBookingEvent(
+    $pdo,
+    (int) $schoolId,
+    (int) $bookingId,
+    'booking_completed',
+    (int) $userId,
+    $completionFeedback
+);
 
 jsonResponse(true, "Agendamento finalizado com sucesso.");
