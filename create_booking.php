@@ -168,15 +168,19 @@ try {
         $bookingLessonStmt->execute([$bookingId, $lessonId]);
     }
 
-    notifyTechniciansAboutBookingEvent(
-        $pdo,
-        (int) $schoolId,
-        (int) $bookingId,
-        'booking_created',
-        (int) $userId
-    );
-
     $pdo->commit();
+
+    try {
+        notifyTechniciansAboutBookingEvent(
+            $pdo,
+            (int) $schoolId,
+            (int) $bookingId,
+            'booking_created',
+            (int) $userId
+        );
+    } catch (Throwable $notificationError) {
+        error_log('Create booking notification failed: ' . $notificationError->getMessage());
+    }
 
     jsonResponse(true, "Agendamento criado com sucesso.", [
         "booking_id" => $bookingId
