@@ -24,6 +24,8 @@ $teacher = trim($_GET['teacher'] ?? '');
 $resource = trim($_GET['resource'] ?? '');
 $classGroup = trim($_GET['class_group'] ?? '');
 $sort = trim($_GET['sort'] ?? 'date_desc');
+$summaryMode = trim($_GET['summary_mode'] ?? 'full');
+$includeFullSummary = $summaryMode !== 'simple';
 $shouldPaginate = isset($_GET['page']) || isset($_GET['page_size']);
 $pagination = $shouldPaginate ? getPaginationParams() : null;
 
@@ -126,133 +128,147 @@ if ($sort === 'date_asc') {
 $baseSelectSql = $selectSql . $fromSql . $orderSql;
 
 if ($shouldPaginate) {
-    $summaryStmt = $pdo->prepare("
-        SELECT
-            COUNT(*) AS total,
-            SUM(CASE WHEN b.status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled_count,
-            SUM(CASE WHEN b.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
-            SUM(CASE WHEN b.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
-            SUM(CASE WHEN b.status = 'completed' AND $completedAtDateExpression = $currentDateExpression THEN 1 ELSE 0 END) AS completed_today_count,
+    $summarySelect = "
+        COUNT(*) AS total,
+        SUM(CASE WHEN b.status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled_count,
+        SUM(CASE WHEN b.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+        SUM(CASE WHEN b.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_count,
+        SUM(CASE WHEN b.status = 'completed' AND $completedAtDateExpression = $currentDateExpression THEN 1 ELSE 0 END) AS completed_today_count
+    ";
+    if ($includeFullSummary) {
+        $summarySelect .= ",
             COUNT(DISTINCT u.id) AS unique_teachers_count,
             COUNT(DISTINCT r.id) AS unique_resources_count,
             COUNT(DISTINCT cg.id) AS unique_class_groups_count,
             COUNT(DISTINCT s.id) AS unique_subjects_count
+        ";
+    }
+
+    $summaryStmt = $pdo->prepare("
+        SELECT
+            $summarySelect
         " . $fromSql);
     $summaryStmt->execute($params);
     $summaryRow = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-    $overallCountStmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM bookings
-        WHERE school_id = ?
-    ");
-    $overallCountStmt->execute([$schoolId]);
-    $overallCount = (int) $overallCountStmt->fetchColumn();
-
-    $lessonSummaryFromSql = str_replace(
-        "FROM bookings b\n    INNER JOIN resources r ON r.id = b.resource_id",
-        "FROM bookings b\n    LEFT JOIN booking_lessons bl ON bl.booking_id = b.id\n    INNER JOIN resources r ON r.id = b.resource_id",
-        $fromSql
-    );
-
-    $lessonSummaryStmt = $pdo->prepare("
-        SELECT COUNT(bl.lesson_slot_id) AS total_reserved_lessons
-        " . $lessonSummaryFromSql);
-    $lessonSummaryStmt->execute($params);
-    $lessonSummaryRow = $lessonSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-    $totalReservedLessons = (int) ($lessonSummaryRow['total_reserved_lessons'] ?? 0);
-
-    $weekdayStmt = $pdo->prepare("
-        SELECT
-            $weekdayIndexExpression AS weekday_index,
-            COUNT(*) AS total
-        " . $fromSql . "
-        GROUP BY weekday_index
-        ORDER BY total DESC, weekday_index ASC
-        LIMIT 1
-    ");
-    $weekdayStmt->execute($params);
-    $weekdayRow = $weekdayStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-
-    $weekdayLabels = [
-        '0' => 'Segunda-feira',
-        '1' => 'Terça-feira',
-        '2' => 'Quarta-feira',
-        '3' => 'Quinta-feira',
-        '4' => 'Sexta-feira',
-        '5' => 'Sábado',
-        '6' => 'Domingo',
-    ];
-    $weekdayKey = (string) ($weekdayRow['weekday_index'] ?? '');
-    $busiestWeekdayLabel = $weekdayLabels[$weekdayKey] ?? 'Sem dados';
-
-    $buildRanking = function (string $labelExpression) use ($pdo, $fromSql, $params) {
-        $rankingStmt = $pdo->prepare("
-            SELECT
-                " . $labelExpression . " AS label,
-                COUNT(*) AS value
-            " . $fromSql . "
-            GROUP BY label
-            HAVING label <> ''
-            ORDER BY value DESC, label ASC
-            LIMIT 5
-        ");
-        $rankingStmt->execute($params);
-
-        return array_map(function ($row) {
-            return [
-                'label' => (string) ($row['label'] ?? ''),
-                'value' => (int) ($row['value'] ?? 0),
-            ];
-        }, $rankingStmt->fetchAll(PDO::FETCH_ASSOC));
-    };
-
-    $optionsStmt = $pdo->prepare("
-        SELECT DISTINCT
-            u.name AS user_name,
-            r.name AS resource_name,
-            cg.name AS class_group_name,
-            b.status
-        " . $fromSql . "
-        ORDER BY b.booking_date DESC, b.id DESC
-    ");
-    $optionsStmt->execute($params);
-    $optionRows = $optionsStmt->fetchAll(PDO::FETCH_ASSOC);
-
+    $overallCount = null;
+    $totalReservedLessons = null;
+    $busiestWeekdayLabel = null;
     $teacherOptions = [];
     $resourceOptions = [];
     $classGroupOptions = [];
     $statusOptions = [];
+    $buildRanking = null;
 
-    foreach ($optionRows as $row) {
-        $teacherName = trim((string) ($row['user_name'] ?? ''));
-        $resourceName = trim((string) ($row['resource_name'] ?? ''));
-        $classGroupName = trim((string) ($row['class_group_name'] ?? ''));
-        $statusName = trim((string) ($row['status'] ?? ''));
+    if ($includeFullSummary) {
+        $overallCountStmt = $pdo->prepare("
+            SELECT COUNT(*)
+            FROM bookings
+            WHERE school_id = ?
+        ");
+        $overallCountStmt->execute([$schoolId]);
+        $overallCount = (int) $overallCountStmt->fetchColumn();
 
-        if ($teacherName !== '') {
-            $teacherOptions[$teacherName] = true;
+        $lessonSummaryFromSql = str_replace(
+            "FROM bookings b\n    INNER JOIN resources r ON r.id = b.resource_id",
+            "FROM bookings b\n    LEFT JOIN booking_lessons bl ON bl.booking_id = b.id\n    INNER JOIN resources r ON r.id = b.resource_id",
+            $fromSql
+        );
+
+        $lessonSummaryStmt = $pdo->prepare("
+            SELECT COUNT(bl.lesson_slot_id) AS total_reserved_lessons
+            " . $lessonSummaryFromSql);
+        $lessonSummaryStmt->execute($params);
+        $lessonSummaryRow = $lessonSummaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $totalReservedLessons = (int) ($lessonSummaryRow['total_reserved_lessons'] ?? 0);
+
+        $weekdayStmt = $pdo->prepare("
+            SELECT
+                $weekdayIndexExpression AS weekday_index,
+                COUNT(*) AS total
+            " . $fromSql . "
+            GROUP BY weekday_index
+            ORDER BY total DESC, weekday_index ASC
+            LIMIT 1
+        ");
+        $weekdayStmt->execute($params);
+        $weekdayRow = $weekdayStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $weekdayLabels = [
+            '0' => 'Segunda-feira',
+            '1' => 'Terça-feira',
+            '2' => 'Quarta-feira',
+            '3' => 'Quinta-feira',
+            '4' => 'Sexta-feira',
+            '5' => 'Sábado',
+            '6' => 'Domingo',
+        ];
+        $weekdayKey = (string) ($weekdayRow['weekday_index'] ?? '');
+        $busiestWeekdayLabel = $weekdayLabels[$weekdayKey] ?? 'Sem dados';
+
+        $buildRanking = function (string $labelExpression) use ($pdo, $fromSql, $params) {
+            $rankingStmt = $pdo->prepare("
+                SELECT
+                    " . $labelExpression . " AS label,
+                    COUNT(*) AS value
+                " . $fromSql . "
+                GROUP BY label
+                HAVING label <> ''
+                ORDER BY value DESC, label ASC
+                LIMIT 5
+            ");
+            $rankingStmt->execute($params);
+
+            return array_map(function ($row) {
+                return [
+                    'label' => (string) ($row['label'] ?? ''),
+                    'value' => (int) ($row['value'] ?? 0),
+                ];
+            }, $rankingStmt->fetchAll(PDO::FETCH_ASSOC));
+        };
+
+        $optionsStmt = $pdo->prepare("
+            SELECT DISTINCT
+                u.name AS user_name,
+                r.name AS resource_name,
+                cg.name AS class_group_name,
+                b.status
+            " . $fromSql . "
+            ORDER BY b.booking_date DESC, b.id DESC
+        ");
+        $optionsStmt->execute($params);
+        $optionRows = $optionsStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($optionRows as $row) {
+            $teacherName = trim((string) ($row['user_name'] ?? ''));
+            $resourceName = trim((string) ($row['resource_name'] ?? ''));
+            $classGroupName = trim((string) ($row['class_group_name'] ?? ''));
+            $statusName = trim((string) ($row['status'] ?? ''));
+
+            if ($teacherName !== '') {
+                $teacherOptions[$teacherName] = true;
+            }
+            if ($resourceName !== '') {
+                $resourceOptions[$resourceName] = true;
+            }
+            if ($classGroupName !== '') {
+                $classGroupOptions[$classGroupName] = true;
+            }
+            if ($statusName !== '') {
+                $statusOptions[$statusName] = true;
+            }
         }
-        if ($resourceName !== '') {
-            $resourceOptions[$resourceName] = true;
-        }
-        if ($classGroupName !== '') {
-            $classGroupOptions[$classGroupName] = true;
-        }
-        if ($statusName !== '') {
-            $statusOptions[$statusName] = true;
-        }
+
+        $teacherOptions = array_keys($teacherOptions);
+        $resourceOptions = array_keys($resourceOptions);
+        $classGroupOptions = array_keys($classGroupOptions);
+        $statusOptions = array_keys($statusOptions);
+
+        sort($teacherOptions, SORT_NATURAL | SORT_FLAG_CASE);
+        sort($resourceOptions, SORT_NATURAL | SORT_FLAG_CASE);
+        sort($classGroupOptions, SORT_NATURAL | SORT_FLAG_CASE);
+        sort($statusOptions, SORT_NATURAL | SORT_FLAG_CASE);
     }
-
-    $teacherOptions = array_keys($teacherOptions);
-    $resourceOptions = array_keys($resourceOptions);
-    $classGroupOptions = array_keys($classGroupOptions);
-    $statusOptions = array_keys($statusOptions);
-
-    sort($teacherOptions, SORT_NATURAL | SORT_FLAG_CASE);
-    sort($resourceOptions, SORT_NATURAL | SORT_FLAG_CASE);
-    sort($classGroupOptions, SORT_NATURAL | SORT_FLAG_CASE);
-    sort($statusOptions, SORT_NATURAL | SORT_FLAG_CASE);
 
     $stmt = $pdo->prepare($baseSelectSql . " LIMIT ? OFFSET ?");
     $queryParams = [...$params, $pagination['page_size'], $pagination['offset']];
@@ -315,23 +331,23 @@ if ($shouldPaginate) {
                 'cancelled_count' => (int) ($summaryRow['cancelled_count'] ?? 0),
                 'completed_today_count' => (int) ($summaryRow['completed_today_count'] ?? 0),
                 'overall_count' => $overallCount,
-                'unique_teachers_count' => (int) ($summaryRow['unique_teachers_count'] ?? 0),
-                'unique_resources_count' => (int) ($summaryRow['unique_resources_count'] ?? 0),
-                'unique_class_groups_count' => (int) ($summaryRow['unique_class_groups_count'] ?? 0),
-                'unique_subjects_count' => (int) ($summaryRow['unique_subjects_count'] ?? 0),
+                'unique_teachers_count' => $includeFullSummary ? (int) ($summaryRow['unique_teachers_count'] ?? 0) : null,
+                'unique_resources_count' => $includeFullSummary ? (int) ($summaryRow['unique_resources_count'] ?? 0) : null,
+                'unique_class_groups_count' => $includeFullSummary ? (int) ($summaryRow['unique_class_groups_count'] ?? 0) : null,
+                'unique_subjects_count' => $includeFullSummary ? (int) ($summaryRow['unique_subjects_count'] ?? 0) : null,
                 'total_reserved_lessons' => $totalReservedLessons,
-                'average_lessons_per_booking' => ((int) ($summaryRow['total'] ?? 0)) > 0
+                'average_lessons_per_booking' => $includeFullSummary && ((int) ($summaryRow['total'] ?? 0)) > 0
                     ? round($totalReservedLessons / (int) ($summaryRow['total'] ?? 0), 2)
-                    : 0,
+                    : null,
                 'busiest_weekday_label' => $busiestWeekdayLabel,
                 'teacher_options' => $teacherOptions,
                 'resource_options' => $resourceOptions,
                 'class_group_options' => $classGroupOptions,
                 'status_options' => $statusOptions,
-                'teacher_ranking' => $buildRanking('u.name'),
-                'resource_ranking' => $buildRanking('r.name'),
-                'class_group_ranking' => $buildRanking('cg.name'),
-                'subject_ranking' => $buildRanking('s.name'),
+                'teacher_ranking' => $includeFullSummary ? $buildRanking('u.name') : [],
+                'resource_ranking' => $includeFullSummary ? $buildRanking('r.name') : [],
+                'class_group_ranking' => $includeFullSummary ? $buildRanking('cg.name') : [],
+                'subject_ranking' => $includeFullSummary ? $buildRanking('s.name') : [],
             ]
         )
     );
