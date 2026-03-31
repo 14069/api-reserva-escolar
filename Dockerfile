@@ -2,8 +2,9 @@ FROM php:8.3-apache
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libpq-dev \
-    && docker-php-ext-install pdo pdo_mysql pdo_pgsql \
-    && a2enmod rewrite headers \
+    && docker-php-ext-install pdo_mysql pdo_pgsql \
+    && a2dismod mpm_event mpm_worker || true \
+    && a2enmod mpm_prefork rewrite headers \
     && echo 'ServerName localhost' >> /etc/apache2/apache2.conf \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
