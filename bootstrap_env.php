@@ -50,6 +50,43 @@ function loadEnvFile(string $path): void
     }
 }
 
+function getBootstrapConfigValue(string $key, ?string $default = null): ?string
+{
+    $value = getenv($key);
+    if ($value !== false && $value !== '') {
+        return $value;
+    }
+
+    if (isset($_ENV[$key]) && $_ENV[$key] !== '') {
+        return $_ENV[$key];
+    }
+
+    if (isset($_SERVER[$key]) && $_SERVER[$key] !== '') {
+        return $_SERVER[$key];
+    }
+
+    return $default;
+}
+
+function configureRuntimeTimezone(): void
+{
+    $timezone = trim((string) getBootstrapConfigValue(
+        'RESERVA_APP_TIMEZONE',
+        getBootstrapConfigValue('APP_TIMEZONE', 'America/Araguaina')
+    ));
+
+    if ($timezone === '') {
+        $timezone = 'America/Araguaina';
+    }
+
+    if (@date_default_timezone_set($timezone)) {
+        return;
+    }
+
+    error_log('Invalid timezone configured for Reserva Escolar API: ' . $timezone);
+    date_default_timezone_set('UTC');
+}
+
 function bootstrapEnv(): void
 {
     static $loaded = false;
@@ -61,6 +98,7 @@ function bootstrapEnv(): void
     $baseDir = __DIR__;
     loadEnvFile($baseDir . '/.env');
     loadEnvFile($baseDir . '/.env.local');
+    configureRuntimeTimezone();
 
     $loaded = true;
 }

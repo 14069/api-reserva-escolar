@@ -4,17 +4,20 @@ require_once __DIR__ . '/bootstrap_env.php';
 require_once __DIR__ . '/response.php';
 require_once __DIR__ . '/db.php';
 
-try {
-    $result = $pdo->query("
-        SELECT
-            current_database() AS database_name,
-            current_user AS current_user,
-            version() AS version_text
-    ")->fetch(PDO::FETCH_ASSOC);
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    jsonResponse(false, 'Método não permitido.', null, 405);
+}
 
-    jsonResponse(true, 'Conexão com Supabase verificada com sucesso.', $result);
+requireDiagnosticAccess();
+
+try {
+    $result = $pdo->query("SELECT 1 AS connection_ok")->fetch(PDO::FETCH_ASSOC);
+
+    jsonResponse(true, 'Conexão com o banco verificada com sucesso.', [
+        'status' => ((int) ($result['connection_ok'] ?? 0)) === 1 ? 'ok' : 'unknown',
+        'driver' => getDatabaseDriver(),
+    ]);
 } catch (Throwable $error) {
-    jsonResponse(false, 'Falha ao consultar o Supabase.', [
-        'error' => $error->getMessage(),
-    ], 500);
+    error_log('Database diagnostic check failed: ' . $error->getMessage());
+    serverErrorResponse('Falha ao verificar conexão com o banco de dados.');
 }

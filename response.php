@@ -39,6 +39,28 @@ function getJsonInput() {
     return $input ?: [];
 }
 
+function requireDiagnosticAccess() {
+    $configuredToken = trim((string) getRuntimeConfigValue('RESERVA_DIAGNOSTIC_TOKEN', ''));
+    $providedToken = trim((string) ($_SERVER['HTTP_X_RESERVA_DIAGNOSTIC_TOKEN'] ?? ($_GET['diagnostic_token'] ?? '')));
+
+    if ($configuredToken !== '') {
+        if ($providedToken === '' || !hash_equals($configuredToken, $providedToken)) {
+            jsonResponse(false, "Acesso não autorizado.", null, 401);
+        }
+        return;
+    }
+
+    $appEnv = strtolower(trim((string) getRuntimeConfigValue('APP_ENV', 'production')));
+    if ($appEnv === 'production') {
+        jsonResponse(false, "Recurso não disponível.", null, 404);
+    }
+
+    $remoteAddress = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
+    if (!in_array($remoteAddress, ['127.0.0.1', '::1', ''], true)) {
+        jsonResponse(false, "Acesso não autorizado.", null, 401);
+    }
+}
+
 function serverErrorResponse($message = "Erro interno do servidor.") {
     jsonResponse(false, $message, null, 500);
 }
