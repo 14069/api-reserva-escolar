@@ -212,8 +212,8 @@ if ($shouldPaginate) {
                     " . $labelExpression . " AS label,
                     COUNT(*) AS value
                 " . $fromSql . "
-                GROUP BY label
-                HAVING label <> ''
+                GROUP BY " . $labelExpression . "
+                HAVING COALESCE(TRIM(" . $labelExpression . "), '') <> ''
                 ORDER BY value DESC, label ASC
                 LIMIT 5
             ");
