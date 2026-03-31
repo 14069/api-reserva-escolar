@@ -234,7 +234,6 @@ if ($shouldPaginate) {
                 cg.name AS class_group_name,
                 b.status
             " . $fromSql . "
-            ORDER BY b.booking_date DESC, b.id DESC
         ");
         $optionsStmt->execute($params);
         $optionRows = $optionsStmt->fetchAll(PDO::FETCH_ASSOC);
