@@ -143,6 +143,39 @@ function databaseColumnExists(PDO $pdo, string $tableName, string $columnName): 
     return $cache[$cacheKey];
 }
 
+function databaseTableExists(PDO $pdo, string $tableName): bool {
+    static $cache = [];
+
+    $cacheKey = getDatabaseDriver() . ':' . $tableName;
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    if (getDatabaseDriver() === 'pgsql') {
+        $stmt = $pdo->prepare("
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$tableName]);
+    } else {
+        $stmt = $pdo->prepare("
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = DATABASE()
+              AND table_name = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$tableName]);
+    }
+
+    $cache[$cacheKey] = (bool) $stmt->fetchColumn();
+
+    return $cache[$cacheKey];
+}
+
 $settings = getDatabaseConnectionSettings();
 $driver = $settings['driver'];
 $host = $settings['host'];

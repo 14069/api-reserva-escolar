@@ -109,6 +109,19 @@ create table if not exists public.notifications (
     created_at timestamp not null default current_timestamp
 );
 
+create table if not exists public.auth_login_attempts (
+    attempt_key varchar(255) primary key,
+    school_code varchar(50) not null,
+    email varchar(120) not null,
+    ip_address varchar(64) not null,
+    failure_count integer not null default 0,
+    first_failed_at timestamp not null,
+    last_failed_at timestamp not null,
+    blocked_until timestamp,
+    created_at timestamp not null default current_timestamp,
+    updated_at timestamp not null default current_timestamp
+);
+
 create index if not exists idx_bookings_school_id on public.bookings (school_id);
 create index if not exists idx_bookings_resource_id on public.bookings (resource_id);
 create index if not exists idx_bookings_user_id on public.bookings (user_id);
@@ -118,6 +131,7 @@ create index if not exists idx_bookings_cancelled_by_user_id on public.bookings 
 create index if not exists idx_bookings_completed_by_user_id on public.bookings (completed_by_user_id);
 create index if not exists idx_booking_lessons_lesson_slot_id on public.booking_lessons (lesson_slot_id);
 create index if not exists idx_notifications_school_user_created_at on public.notifications (school_id, user_id, created_at desc);
+create index if not exists idx_auth_login_attempts_blocked_until on public.auth_login_attempts (blocked_until);
 create index if not exists idx_notifications_user_read_at on public.notifications (user_id, read_at);
 create index if not exists idx_users_school_id on public.users (school_id);
 create index if not exists idx_resources_category_id on public.resources (category_id);

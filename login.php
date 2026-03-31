@@ -1,6 +1,7 @@
 <?php
 require_once 'response.php';
 require_once 'db.php';
+require_once 'auth_rate_limit.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(false, "Método não permitido.", null, 405);
@@ -15,6 +16,9 @@ $password = trim($input['password'] ?? '');
 if (empty($schoolCode) || empty($email) || empty($password)) {
     jsonResponse(false, "Código da escola, email e senha são obrigatórios.", null, 400);
 }
+
+$attemptKey = buildLoginAttemptKey($schoolCode, $email, getClientIpAddress());
+enforceLoginRateLimit($pdo, $attemptKey);
 
 $stmt = $pdo->prepare("
     SELECT
@@ -38,6 +42,7 @@ $stmt->execute([$schoolCode, $email]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$user || !password_verify($password, $user['password'])) {
+    registerFailedLoginAttempt($pdo, $attemptKey, $schoolCode, $email, getClientIpAddress());
     jsonResponse(false, "Credenciais inválidas.", null, 401);
 }
 
@@ -51,6 +56,7 @@ $updateTokenStmt = $pdo->prepare("
     WHERE id = ?
 ");
 $updateTokenStmt->execute([$hashedToken, $tokenExpiresAt, $user['id']]);
+clearFailedLoginAttempts($pdo, $attemptKey);
 
 unset($user['password']);
 $user['api_token'] = $token;
