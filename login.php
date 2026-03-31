@@ -37,15 +37,12 @@ $stmt->execute([$schoolCode, $email]);
 
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$user) {
-    jsonResponse(false, "Usuário não encontrado.", null, 404);
-}
-
-if (!password_verify($password, $user['password'])) {
-    jsonResponse(false, "Senha inválida.", null, 401);
+if (!$user || !password_verify($password, $user['password'])) {
+    jsonResponse(false, "Credenciais inválidas.", null, 401);
 }
 
 $token = bin2hex(random_bytes(32));
+$hashedToken = hashAuthToken($token);
 $tokenExpiresAt = getTokenExpiryDateTime();
 $updateTokenStmt = $pdo->prepare("
     UPDATE users
@@ -53,7 +50,7 @@ $updateTokenStmt = $pdo->prepare("
         api_token_expires_at = ?
     WHERE id = ?
 ");
-$updateTokenStmt->execute([$token, $tokenExpiresAt, $user['id']]);
+$updateTokenStmt->execute([$hashedToken, $tokenExpiresAt, $user['id']]);
 
 unset($user['password']);
 $user['api_token'] = $token;

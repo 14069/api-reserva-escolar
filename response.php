@@ -230,23 +230,39 @@ function getTokenExpiryDateTime() {
     return (new DateTimeImmutable('+12 hours'))->format('Y-m-d H:i:s');
 }
 
+function hashAuthToken($token) {
+    return hash('sha256', (string) $token);
+}
+
 function requireAuthenticatedUser($pdo, $schoolId = null, $requiredRole = null) {
     $token = getBearerToken();
     if (!$token) {
         jsonResponse(false, "Autenticação obrigatória.", null, 401);
     }
 
+    $hashedToken = hashAuthToken($token);
+
     $stmt = $pdo->prepare("
         SELECT id, school_id, name, email, role, active, api_token, api_token_expires_at
         FROM users
-        WHERE api_token = ?
+        WHERE api_token IN (?, ?)
         LIMIT 1
     ");
-    $stmt->execute([$token]);
+    $stmt->execute([$hashedToken, $token]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user || (int)($user['active'] ?? 0) !== 1) {
         jsonResponse(false, "Sessão inválida ou expirada.", null, 401);
+    }
+
+    if (($user['api_token'] ?? null) === $token) {
+        $upgradeTokenStmt = $pdo->prepare("
+            UPDATE users
+            SET api_token = ?
+            WHERE id = ?
+        ");
+        $upgradeTokenStmt->execute([$hashedToken, $user['id']]);
+        $user['api_token'] = $hashedToken;
     }
 
     if (
