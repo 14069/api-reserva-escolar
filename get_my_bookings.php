@@ -3,6 +3,7 @@ require_once 'response.php';
 require_once 'db.php';
 
 $formattedBookingDateExpression = getFormattedDateSearchExpression('b.booking_date');
+$searchLikeOperator = getSearchLikeOperator();
 $completionFeedbackSelect = databaseColumnExists($pdo, 'bookings', 'completion_feedback')
     ? 'b.completion_feedback'
     : 'NULL AS completion_feedback';
@@ -59,11 +60,11 @@ if ($status !== '') {
 
 if ($search !== '') {
     $fromSql .= " AND (
-        r.name LIKE ?
-        OR cg.name LIKE ?
-        OR s.name LIKE ?
-        OR b.purpose LIKE ?
-        OR $formattedBookingDateExpression LIKE ?
+        r.name $searchLikeOperator ?
+        OR cg.name $searchLikeOperator ?
+        OR s.name $searchLikeOperator ?
+        OR b.purpose $searchLikeOperator ?
+        OR $formattedBookingDateExpression $searchLikeOperator ?
     )";
     $searchParam = '%' . $search . '%';
     $params[] = $searchParam;

@@ -92,6 +92,16 @@ function getDateOnlyExpression($columnName) {
     return "CAST($columnName AS DATE)";
 }
 
+function getSearchLikeOperator() {
+    return getDatabaseDriver() === 'pgsql' ? 'ILIKE' : 'LIKE';
+}
+
+function getSearchableTextExpression($columnName) {
+    return getDatabaseDriver() === 'pgsql'
+        ? "CAST($columnName AS TEXT)"
+        : "CAST($columnName AS CHAR)";
+}
+
 function getWeekdayIndexExpression($columnName) {
     return getDatabaseDriver() === 'pgsql'
         ? "((EXTRACT(ISODOW FROM $columnName))::int - 1)"

@@ -2,6 +2,8 @@
 require_once 'response.php';
 require_once 'db.php';
 
+$searchLikeOperator = getSearchLikeOperator();
+
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(false, "Método não permitido.", null, 405);
 }
@@ -31,7 +33,7 @@ if ($status === 'active') {
 }
 
 if ($search !== '') {
-    $whereSql .= " AND name LIKE ?";
+    $whereSql .= " AND name $searchLikeOperator ?";
     $params[] = '%' . $search . '%';
 }
 

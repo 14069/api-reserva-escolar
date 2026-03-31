@@ -2,6 +2,11 @@
 require_once 'response.php';
 require_once 'db.php';
 
+$searchLikeOperator = getSearchLikeOperator();
+$lessonNumberSearchExpression = getSearchableTextExpression('lesson_number');
+$startTimeSearchExpression = "COALESCE(" . getSearchableTextExpression('start_time') . ", '')";
+$endTimeSearchExpression = "COALESCE(" . getSearchableTextExpression('end_time') . ", '')";
+
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     jsonResponse(false, "Método não permitido.", null, 405);
 }
@@ -32,10 +37,10 @@ if ($status === 'active') {
 
 if ($search !== '') {
     $whereSql .= " AND (
-        label LIKE ?
-        OR CAST(lesson_number AS CHAR) LIKE ?
-        OR COALESCE(start_time, '') LIKE ?
-        OR COALESCE(end_time, '') LIKE ?
+        label $searchLikeOperator ?
+        OR $lessonNumberSearchExpression $searchLikeOperator ?
+        OR $startTimeSearchExpression $searchLikeOperator ?
+        OR $endTimeSearchExpression $searchLikeOperator ?
     )";
     $searchParam = '%' . $search . '%';
     $params[] = $searchParam;
