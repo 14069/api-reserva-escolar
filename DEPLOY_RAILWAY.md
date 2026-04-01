@@ -85,3 +85,36 @@ E abra:
 curl -H "X-Reserva-Diagnostic-Token: SEU_TOKEN" \
   http://127.0.0.1:8092/check_supabase_connection.php
 ```
+
+## 7. Testes de integracao
+
+O script `integration_test_api.sh` valida:
+
+- `HEAD` e `GET` de `health.php`
+- login invalido com `error_code`
+- login valido
+- acesso a endpoint protegido de reservas
+- opcionalmente, criacao e cancelamento de reserva
+
+Somente leitura:
+
+```bash
+export RESERVA_TEST_SCHOOL_CODE=ETI001
+export RESERVA_TEST_EMAIL=tecnico@seudominio.com
+export RESERVA_TEST_PASSWORD='SUA_SENHA'
+./integration_test_api.sh https://api.seudominio.com.br
+```
+
+Com escrita controlada:
+
+```bash
+export RESERVA_TEST_RUN_WRITE_TESTS=1
+export RESERVA_TEST_RESOURCE_ID=1
+export RESERVA_TEST_CLASS_GROUP_ID=1
+export RESERVA_TEST_SUBJECT_ID=1
+export RESERVA_TEST_BOOKING_DATE=2026-04-10
+export RESERVA_TEST_LESSON_IDS=1,2
+./integration_test_api.sh https://api.seudominio.com.br
+```
+
+Use o modo de escrita apenas em homologacao ou com dados preparados para teste.
