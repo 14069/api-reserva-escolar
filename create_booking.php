@@ -3,9 +3,7 @@ require_once 'response.php';
 require_once 'db.php';
 require_once 'notifications_utils.php';
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    jsonResponse(false, "Método não permitido.", null, 405);
-}
+requireRequestMethod(['POST']);
 
 $input = getJsonInput();
 
@@ -28,16 +26,16 @@ if (
     !is_array($lessonIds) ||
     count($lessonIds) === 0
 ) {
-    jsonResponse(false, "Dados obrigatórios não informados.", null, 400);
+    jsonErrorResponse("Dados obrigatórios não informados.", 400, 'BOOKING_REQUIRED_FIELDS');
 }
 
 if (!isValidDateString($bookingDate)) {
-    jsonResponse(false, "booking_date inválida. Use YYYY-MM-DD.", null, 400);
+    jsonErrorResponse("booking_date inválida. Use YYYY-MM-DD.", 400, 'BOOKING_INVALID_DATE');
 }
 
 $lessonIds = array_values(array_unique(array_map('intval', $lessonIds)));
 if (count($lessonIds) === 0 || in_array(0, $lessonIds, true)) {
-    jsonResponse(false, "Uma ou mais aulas selecionadas são inválidas.", null, 400);
+    jsonErrorResponse("Uma ou mais aulas selecionadas são inválidas.", 400, 'BOOKING_INVALID_LESSONS');
 }
 
 $authUser = requireAuthenticatedUser($pdo, $schoolId);
@@ -55,7 +53,7 @@ try {
     ");
     $checkUser->execute([$userId, $schoolId]);
     if (!$checkUser->fetch()) {
-        throw new RuntimeException("Usuário inválido para esta escola.", 404);
+        throw new DomainException("Usuário inválido para esta escola.", 404);
     }
 
     $checkResource = $pdo->prepare("
@@ -67,7 +65,7 @@ try {
     ");
     $checkResource->execute([$resourceId, $schoolId]);
     if (!$checkResource->fetch()) {
-        throw new RuntimeException("Recurso inválido para esta escola.", 404);
+        throw new DomainException("Recurso inválido para esta escola.", 404);
     }
 
     $checkClassGroup = $pdo->prepare("
@@ -79,7 +77,7 @@ try {
     ");
     $checkClassGroup->execute([$classGroupId, $schoolId]);
     if (!$checkClassGroup->fetch()) {
-        throw new RuntimeException("Turma inválida para esta escola.", 404);
+        throw new DomainException("Turma inválida para esta escola.", 404);
     }
 
     $checkSubject = $pdo->prepare("
@@ -91,7 +89,7 @@ try {
     ");
     $checkSubject->execute([$subjectId, $schoolId]);
     if (!$checkSubject->fetch()) {
-        throw new RuntimeException("Disciplina inválida para esta escola.", 404);
+        throw new DomainException("Disciplina inválida para esta escola.", 404);
     }
 
     $lessonPlaceholders = implode(',', array_fill(0, count($lessonIds), '?'));
@@ -108,7 +106,7 @@ try {
     $validLessons = $lessonCheckStmt->fetchAll(PDO::FETCH_COLUMN);
 
     if (count($validLessons) !== count($lessonIds)) {
-        throw new RuntimeException("Uma ou mais aulas selecionadas são inválidas.", 400);
+        throw new DomainException("Uma ou mais aulas selecionadas são inválidas.", 400);
     }
 
     $conflictSql = "
@@ -128,7 +126,7 @@ try {
     $conflict = $conflictStmt->fetch(PDO::FETCH_ASSOC);
 
     if ($conflict) {
-        throw new RuntimeException(
+        throw new DomainException(
             "Conflito de agendamento na aula: " . $conflict['label'],
             409
         );
@@ -186,12 +184,18 @@ try {
         "booking_id" => $bookingId
     ], 201);
 
-} catch (RuntimeException $e) {
+} catch (DomainException $e) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
 
-    jsonResponse(false, $e->getMessage(), null, $e->getCode() ?: 400);
+    $errorCode = match ((int) $e->getCode()) {
+        409 => 'BOOKING_CONFLICT',
+        404 => 'BOOKING_REFERENCE_NOT_FOUND',
+        default => 'BOOKING_VALIDATION_ERROR',
+    };
+
+    jsonErrorResponse($e->getMessage(), $e->getCode() ?: 400, $errorCode);
 
 } catch (Exception $e) {
     if ($pdo->inTransaction()) {

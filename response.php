@@ -30,8 +30,41 @@ function jsonResponse($success, $message = "", $data = null, $statusCode = 200, 
         $payload["meta"] = $meta;
     }
 
-    echo json_encode($payload);
+    if (strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')) !== 'HEAD') {
+        echo json_encode($payload);
+    }
     exit;
+}
+
+function jsonErrorResponse($message, $statusCode = 400, $errorCode = 'API_ERROR', $data = null, $meta = []) {
+    $normalizedMeta = is_array($meta) ? $meta : [];
+    $normalizedMeta['error_code'] = $errorCode;
+    $normalizedMeta['status_code'] = $statusCode;
+
+    jsonResponse(false, $message, $data, $statusCode, $normalizedMeta);
+}
+
+function methodNotAllowedResponse($allowedMethods = ['GET']) {
+    $allowedMethods = array_values(array_unique(array_map('strtoupper', $allowedMethods)));
+    header('Allow: ' . implode(', ', $allowedMethods));
+
+    jsonErrorResponse(
+        "Método não permitido.",
+        405,
+        'METHOD_NOT_ALLOWED',
+        null,
+        ['allowed_methods' => $allowedMethods]
+    );
+}
+
+function requireRequestMethod($allowedMethods) {
+    $allowedMethods = is_array($allowedMethods) ? $allowedMethods : [$allowedMethods];
+    $allowedMethods = array_values(array_unique(array_map('strtoupper', $allowedMethods)));
+    $requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+
+    if (!in_array($requestMethod, $allowedMethods, true)) {
+        methodNotAllowedResponse($allowedMethods);
+    }
 }
 
 function getJsonInput() {
@@ -45,24 +78,24 @@ function requireDiagnosticAccess() {
 
     if ($configuredToken !== '') {
         if ($providedToken === '' || !hash_equals($configuredToken, $providedToken)) {
-            jsonResponse(false, "Acesso não autorizado.", null, 401);
+            jsonErrorResponse("Acesso não autorizado.", 401, 'DIAGNOSTIC_ACCESS_DENIED');
         }
         return;
     }
 
     $appEnv = strtolower(trim((string) getRuntimeConfigValue('APP_ENV', 'production')));
     if ($appEnv === 'production') {
-        jsonResponse(false, "Recurso não disponível.", null, 404);
+        jsonErrorResponse("Recurso não disponível.", 404, 'DIAGNOSTIC_UNAVAILABLE');
     }
 
     $remoteAddress = trim((string) ($_SERVER['REMOTE_ADDR'] ?? ''));
     if (!in_array($remoteAddress, ['127.0.0.1', '::1', ''], true)) {
-        jsonResponse(false, "Acesso não autorizado.", null, 401);
+        jsonErrorResponse("Acesso não autorizado.", 401, 'DIAGNOSTIC_ACCESS_DENIED');
     }
 }
 
 function serverErrorResponse($message = "Erro interno do servidor.") {
-    jsonResponse(false, $message, null, 500);
+    jsonErrorResponse($message, 500, 'INTERNAL_SERVER_ERROR');
 }
 
 function getAllowedOrigins() {
@@ -108,7 +141,7 @@ function isOriginAllowed($origin) {
 
 function applyCorsPolicy() {
     header("Content-Type: application/json; charset=UTF-8");
-    header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+    header("Access-Control-Allow-Methods: GET, HEAD, POST, OPTIONS");
     header("Access-Control-Allow-Headers: Content-Type, Authorization");
     header("Vary: Origin");
 
@@ -118,7 +151,7 @@ function applyCorsPolicy() {
     }
 
     if (!isOriginAllowed($origin)) {
-        jsonResponse(false, "Origem não autorizada.", null, 403);
+        jsonErrorResponse("Origem não autorizada.", 403, 'ORIGIN_NOT_ALLOWED');
     }
 
     header("Access-Control-Allow-Origin: $origin");
@@ -237,7 +270,7 @@ function hashAuthToken($token) {
 function requireAuthenticatedUser($pdo, $schoolId = null, $requiredRole = null) {
     $token = getBearerToken();
     if (!$token) {
-        jsonResponse(false, "Autenticação obrigatória.", null, 401);
+        jsonErrorResponse("Autenticação obrigatória.", 401, 'AUTH_REQUIRED');
     }
 
     $hashedToken = hashAuthToken($token);
@@ -252,7 +285,7 @@ function requireAuthenticatedUser($pdo, $schoolId = null, $requiredRole = null) 
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user || (int)($user['active'] ?? 0) !== 1) {
-        jsonResponse(false, "Sessão inválida ou expirada.", null, 401);
+        jsonErrorResponse("Sessão inválida ou expirada.", 401, 'AUTH_SESSION_INVALID');
     }
 
     if (($user['api_token'] ?? null) === $token) {
@@ -277,15 +310,15 @@ function requireAuthenticatedUser($pdo, $schoolId = null, $requiredRole = null) 
         ");
         $clearTokenStmt->execute([$user['id']]);
 
-        jsonResponse(false, "Sessão inválida ou expirada.", null, 401);
+        jsonErrorResponse("Sessão inválida ou expirada.", 401, 'AUTH_SESSION_EXPIRED');
     }
 
     if ($schoolId !== null && (int)$user['school_id'] !== (int)$schoolId) {
-        jsonResponse(false, "Você não tem acesso a esta escola.", null, 403);
+        jsonErrorResponse("Você não tem acesso a esta escola.", 403, 'AUTH_SCHOOL_FORBIDDEN');
     }
 
     if ($requiredRole !== null && $user['role'] !== $requiredRole) {
-        jsonResponse(false, "Você não tem permissão para esta operação.", null, 403);
+        jsonErrorResponse("Você não tem permissão para esta operação.", 403, 'AUTH_ROLE_FORBIDDEN');
     }
 
     return $user;

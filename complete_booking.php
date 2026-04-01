@@ -6,9 +6,7 @@ require_once 'notifications_utils.php';
 $currentTimestampExpression = getCurrentTimestampExpression();
 $hasCompletionFeedbackColumn = databaseColumnExists($pdo, 'bookings', 'completion_feedback');
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    jsonResponse(false, "Método não permitido.", null, 405);
-}
+requireRequestMethod(['POST']);
 
 $input = getJsonInput();
 
@@ -22,11 +20,11 @@ if ($completionFeedback === '') {
 }
 
 if ($completionFeedback !== null && mb_strlen($completionFeedback) > 500) {
-    jsonResponse(false, "O feedback deve ter no máximo 500 caracteres.", null, 400);
+    jsonErrorResponse("O feedback deve ter no máximo 500 caracteres.", 400, 'BOOKING_FEEDBACK_TOO_LONG');
 }
 
 if (empty($schoolId) || empty($bookingId) || empty($userId)) {
-    jsonResponse(false, "school_id, booking_id e user_id são obrigatórios.", null, 400);
+    jsonErrorResponse("school_id, booking_id e user_id são obrigatórios.", 400, 'BOOKING_COMPLETE_REQUIRED_FIELDS');
 }
 
 $authUser = requireAuthenticatedUser($pdo, $schoolId);
@@ -49,25 +47,25 @@ $stmt->execute([$userId, $bookingId, $schoolId]);
 $result = $stmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$result) {
-    jsonResponse(false, "Agendamento não encontrado.", null, 404);
+    jsonErrorResponse("Agendamento não encontrado.", 404, 'BOOKING_NOT_FOUND');
 }
 
 if ((int) $result['user_id'] !== (int) $userId && $result['role'] !== 'technician') {
-    jsonResponse(false, "Você não tem permissão para finalizar este agendamento.", null, 403);
+    jsonErrorResponse("Você não tem permissão para finalizar este agendamento.", 403, 'BOOKING_COMPLETE_FORBIDDEN');
 }
 
 if ($result['status'] === 'cancelled') {
-    jsonResponse(false, "Agendamentos cancelados não podem ser finalizados.", null, 400);
+    jsonErrorResponse("Agendamentos cancelados não podem ser finalizados.", 400, 'BOOKING_ALREADY_CANCELLED');
 }
 
 if ($result['status'] === 'completed') {
-    jsonResponse(false, "Este agendamento já foi finalizado.", null, 400);
+    jsonErrorResponse("Este agendamento já foi finalizado.", 400, 'BOOKING_ALREADY_COMPLETED');
 }
 
 $bookingDate = trim((string) ($result['booking_date'] ?? ''));
 $today = (new DateTimeImmutable('today'))->format('Y-m-d');
 if ($bookingDate === '' || $bookingDate > $today) {
-    jsonResponse(false, "Só é possível finalizar reservas no dia do uso ou depois dele.", null, 400);
+    jsonErrorResponse("Só é possível finalizar reservas no dia do uso ou depois dele.", 400, 'BOOKING_COMPLETE_TOO_EARLY');
 }
 
 try {
@@ -99,7 +97,11 @@ try {
         false,
         "Não foi possível finalizar o agendamento. Verifique se a tabela bookings possui as colunas de conclusão esperadas.",
         null,
-        500
+        500,
+        [
+            'error_code' => 'BOOKING_COMPLETE_SCHEMA_ERROR',
+            'status_code' => 500,
+        ]
     );
 }
 
