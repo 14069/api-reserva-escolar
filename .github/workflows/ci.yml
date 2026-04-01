@@ -1,0 +1,108 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: reserva_escolar_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d reserva_escolar_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      APP_ENV: test
+      APP_URL: http://127.0.0.1:8092
+      RESERVA_APP_TIMEZONE: America/Araguaina
+      RESERVA_ALLOWED_ORIGINS: http://127.0.0.1:8092
+      RESERVA_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/reserva_escolar_test?sslmode=disable
+      RESERVA_TEST_SCHOOL_CODE: CI001
+      RESERVA_TEST_EMAIL: tecnico.ci@example.com
+      RESERVA_TEST_PASSWORD: teste123
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_pgsql
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Wait for PostgreSQL
+        run: |
+          until pg_isready -h 127.0.0.1 -p 5432 -U postgres -d reserva_escolar_test; do
+            sleep 1
+          done
+        env:
+          PGPASSWORD: postgres
+
+      - name: Apply schema
+        run: psql "$RESERVA_DB_URL" -f supabase/schema_postgres.sql
+
+      - name: Seed integration user
+        run: |
+          PASSWORD_HASH="$(php -r "echo password_hash('teste123', PASSWORD_DEFAULT);")"
+          psql "$RESERVA_DB_URL" <<SQL
+          INSERT INTO public.schools (school_name, school_code, password)
+          VALUES ('Escola CI', 'CI001', '${PASSWORD_HASH}');
+
+          INSERT INTO public.users (school_id, name, email, password, role, active)
+          VALUES (
+            (SELECT id FROM public.schools WHERE school_code = 'CI001'),
+            'Tecnico CI',
+            'tecnico.ci@example.com',
+            '${PASSWORD_HASH}',
+            'technician',
+            1
+          );
+          SQL
+        env:
+          PGPASSWORD: postgres
+
+      - name: Lint PHP files
+        run: |
+          while IFS= read -r file; do
+            php -l "$file"
+          done < <(find . -maxdepth 1 -name '*.php' -type f | sort)
+
+      - name: Validate shell scripts
+        run: |
+          bash -n smoke_test_api.sh
+          bash -n integration_test_api.sh
+
+      - name: Start local PHP server
+        run: |
+          php -S 127.0.0.1:8092 -t . > /tmp/reserva_backend_ci.log 2>&1 &
+          echo $! > /tmp/reserva_backend_ci.pid
+          sleep 2
+
+      - name: Run smoke test
+        run: ./smoke_test_api.sh http://127.0.0.1:8092
+
+      - name: Run integration test
+        run: ./integration_test_api.sh http://127.0.0.1:8092
+
+      - name: Show server log on failure
+        if: failure()
+        run: cat /tmp/reserva_backend_ci.log || true
