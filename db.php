@@ -108,6 +108,60 @@ function getWeekdayIndexExpression($columnName) {
         : "WEEKDAY($columnName)";
 }
 
+function buildBookingCreationLockName(int $schoolId, int $resourceId, string $bookingDate): string {
+    return sprintf('booking:%d:%d:%s', $schoolId, $resourceId, $bookingDate);
+}
+
+function normalizeSigned32BitFromString(string $value): int {
+    $intValue = (int) $value;
+    if ($intValue > 2147483647) {
+        $intValue -= 4294967296;
+    }
+
+    return $intValue;
+}
+
+function acquireBookingCreationLock(PDO $pdo, int $schoolId, int $resourceId, string $bookingDate, int $timeoutSeconds = 10): string|null|false {
+    $lockName = buildBookingCreationLockName($schoolId, $resourceId, $bookingDate);
+
+    if (getDatabaseDriver() === 'pgsql') {
+        $lockKey1 = $schoolId;
+        $lockKey2 = normalizeSigned32BitFromString(sprintf('%u', crc32($lockName)));
+        $deadlineAt = microtime(true) + max(1, $timeoutSeconds);
+
+        do {
+            $stmt = $pdo->prepare('SELECT pg_try_advisory_xact_lock(?, ?)');
+            $stmt->execute([$lockKey1, $lockKey2]);
+            if ($stmt->fetchColumn()) {
+                return null;
+            }
+
+            usleep(200000);
+        } while (microtime(true) < $deadlineAt);
+
+        return false;
+    }
+
+    $stmt = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+    $stmt->execute([$lockName, $timeoutSeconds]);
+    $lockAcquired = $stmt->fetchColumn();
+
+    return ((int) $lockAcquired === 1) ? $lockName : false;
+}
+
+function releaseBookingCreationLock(PDO $pdo, ?string $lockName): void {
+    if ($lockName === null || $lockName === '' || getDatabaseDriver() === 'pgsql') {
+        return;
+    }
+
+    try {
+        $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+        $stmt->execute([$lockName]);
+    } catch (Throwable $error) {
+        error_log('Failed to release booking creation lock: ' . $error->getMessage());
+    }
+}
+
 function databaseColumnExists(PDO $pdo, string $tableName, string $columnName): bool {
     static $cache = [];
 
