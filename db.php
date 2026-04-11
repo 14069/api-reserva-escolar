@@ -18,6 +18,47 @@ function getDatabaseConfigValue($key, $default = null) {
     return $default;
 }
 
+function getApplicationEnvironment() {
+    return strtolower(trim((string) getDatabaseConfigValue('APP_ENV', 'production')));
+}
+
+function isNonProductionEnvironment() {
+    return in_array(getApplicationEnvironment(), ['development', 'dev', 'local', 'test'], true);
+}
+
+function validateDatabaseConnectionSettings(array $settings): array {
+    $driver = strtolower((string) ($settings['driver'] ?? ''));
+    if (!in_array($driver, ['mysql', 'pgsql'], true)) {
+        throw new RuntimeException('Driver de banco não suportado.');
+    }
+
+    $settings['driver'] = $driver;
+    $settings['host'] = trim((string) ($settings['host'] ?? ''));
+    $settings['name'] = trim((string) ($settings['name'] ?? ''));
+    $settings['username'] = (string) ($settings['username'] ?? '');
+    $settings['password'] = (string) ($settings['password'] ?? '');
+
+    if (
+        $settings['host'] === '' ||
+        $settings['name'] === '' ||
+        $settings['username'] === ''
+    ) {
+        throw new RuntimeException('Configuração de banco incompleta.');
+    }
+
+    if (!isNonProductionEnvironment()) {
+        if (strcasecmp($settings['username'], 'root') === 0) {
+            throw new RuntimeException('Usuário root não é permitido fora de desenvolvimento.');
+        }
+
+        if ($settings['password'] === '') {
+            throw new RuntimeException('Senha do banco é obrigatória fora de desenvolvimento.');
+        }
+    }
+
+    return $settings;
+}
+
 function getDatabaseConnectionSettings() {
     $databaseUrl = trim((string) getDatabaseConfigValue('RESERVA_DB_URL', ''));
     if ($databaseUrl !== '') {
@@ -46,10 +87,10 @@ function getDatabaseConnectionSettings() {
             $settings['driver'] = 'pgsql';
         }
 
-        return $settings;
+        return validateDatabaseConnectionSettings($settings);
     }
 
-    return [
+    return validateDatabaseConnectionSettings([
         'driver' => strtolower((string) getDatabaseConfigValue('RESERVA_DB_DRIVER', 'mysql')),
         'host' => getDatabaseConfigValue('RESERVA_DB_HOST', '127.0.0.1'),
         'port' => getDatabaseConfigValue('RESERVA_DB_PORT', '3306'),
@@ -58,7 +99,7 @@ function getDatabaseConnectionSettings() {
         'password' => getDatabaseConfigValue('RESERVA_DB_PASSWORD', ''),
         'charset' => getDatabaseConfigValue('RESERVA_DB_CHARSET', 'utf8mb4'),
         'sslmode' => getDatabaseConfigValue('RESERVA_DB_SSLMODE', null),
-    ];
+    ]);
 }
 
 function getDatabaseDriver() {

@@ -15,14 +15,14 @@ echo
 echo
 
 echo "Health:"
-curl -fsS "${BASE_URL%/}/health.php"
+curl -fsS "${BASE_URL%/}/health"
 echo
 echo
 
 if [[ -n "$DIAGNOSTIC_TOKEN" ]]; then
   echo "DB diagnostic:"
   curl -fsS -H "X-Reserva-Diagnostic-Token: ${DIAGNOSTIC_TOKEN}" \
-    "${BASE_URL%/}/check_supabase_connection.php"
+    "${BASE_URL%/}/check-supabase-connection"
   echo
 else
   echo "DB diagnostic skipped. Defina RESERVA_DIAGNOSTIC_TOKEN ou passe o token como 2º argumento."

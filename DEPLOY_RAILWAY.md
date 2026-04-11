@@ -61,8 +61,8 @@ Variaveis minimas no painel do Railway:
 Depois do deploy:
 
 - `GET /` deve retornar status `ok`
-- `GET /health.php` pode ser usado como healthcheck simples
-- `GET /login.php` deve responder `405` se acessado com metodo incorreto
+- `GET /health` pode ser usado como healthcheck simples
+- `GET /login` deve responder `405` se acessado com metodo incorreto
 - Rode `./smoke_test_api.sh https://api.seudominio.com.br` para um teste rapido
 - Para o diagnostico de banco, use o token interno:
   `RESERVA_DIAGNOSTIC_TOKEN=... ./smoke_test_api.sh https://api.seudominio.com.br`
@@ -76,21 +76,21 @@ Esta API agora aceita MySQL e PostgreSQL na conexao, mas o deploy de producao de
 Depois de preencher o `.env.local`, rode:
 
 ```bash
-php -S 127.0.0.1:8092 -t .
+php -S 127.0.0.1:8092 -t . router.php
 ```
 
 E abra:
 
 ```bash
 curl -H "X-Reserva-Diagnostic-Token: SEU_TOKEN" \
-  http://127.0.0.1:8092/check_supabase_connection.php
+  http://127.0.0.1:8092/check-supabase-connection
 ```
 
 ## 7. Testes de integracao
 
 O script `integration_test_api.sh` valida:
 
-- `HEAD` e `GET` de `health.php`
+- `HEAD` e `GET` de `health`
 - login invalido com `error_code`
 - login valido
 - acesso a endpoint protegido de reservas

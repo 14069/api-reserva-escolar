@@ -93,7 +93,7 @@ jobs:
 
       - name: Start local PHP server
         run: |
-          php -S 127.0.0.1:8092 -t . > /tmp/reserva_backend_ci.log 2>&1 &
+          php -S 127.0.0.1:8092 -t . router.php > /tmp/reserva_backend_ci.log 2>&1 &
           echo $! > /tmp/reserva_backend_ci.pid
           sleep 2
 
