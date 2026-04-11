@@ -88,6 +88,13 @@ try {
         $categoryMap[$category['name']] = $category['id'];
     }
 
+    $requiredCategories = ['chromebooks', 'audiovisual', 'espacos'];
+    foreach ($requiredCategories as $required) {
+        if (!isset($categoryMap[$required])) {
+            throw new Exception("Categoria de recurso '$required' não encontrada no banco de dados.");
+        }
+    }
+
     $resourceInsert = $pdo->prepare("
         INSERT INTO resources (school_id, category_id, name, active)
         VALUES (?, ?, ?, 1)
